@@ -1,0 +1,71 @@
+[report.md](https://github.com/user-attachments/files/29950270/report.md)
+# Task 1: OSINT & Surface Reconnaissance — Threat Report
+
+**Growfinix Cybersecurity Internship — Month 1**
+
+## Objective
+Conduct passive, non-intrusive open-source intelligence (OSINT) gathering on a target domain to map its public attack surface — exposed subdomains, hosting infrastructure, and publicly discoverable endpoints — without directly interacting with or scanning the target's systems.
+
+## Target
+`tesla.com` (chosen as a large, real-world domain with a rich public footprint, suitable for demonstrating OSINT technique at scale)
+
+## Environment
+- Kali Linux (VirtualBox VM)
+- theHarvester v4.11.1
+
+## Tools & Sources Used
+- **theHarvester** — automated OSINT aggregation tool
+- Sources queried: `crt.sh` (certificate transparency logs), `HackerTarget`, `RapidDNS`, `AlienVault OTX`, `URLScan`
+
+## Command Used
+```bash
+theharvester -d tesla.com -b crtsh,hackertarget,rapiddns,otx,urlscan -f osint_report
+```
+
+## Findings
+
+### Subdomains / Hosts Discovered
+~95 unique hosts identified, revealing significant infrastructure detail, including:
+- **Authentication & identity**: `auth.tesla.com`, `accounts.tesla.com`
+- **Financial/billing**: `billing.tesla.com`, `pay.tesla.com`
+- **Fleet & vehicle systems**: `fleet-api.eng.na.vn.cloud.tesla.com`, `fleet-api.prd.na.vn.cloud.tesla.com`, `vehicle-files.prd.usw2.vn.cloud.tesla.com`
+- **Supplier/partner portals**: `suppliers.tesla.com`, `origin-suppliers.tesla.com`
+- **Internal/staging environments**: multiple `origin-*` and `*-stg-*` subdomains, suggesting pre-production environments are publicly resolvable
+- **Multi-region cloud deployment**: subdomains reveal AWS regions in use (`usw`, `usw2`, `euw1`) and internal naming conventions (`npuhe`, `npute`, `npuv`, `epuca`)
+
+### IP Addresses & Infrastructure
+- **44 IP addresses** identified (IPv4 + IPv6), spanning:
+  - Cloudflare (edge/CDN protection)
+  - Akamai (CDN, ~23.x.x.x ranges)
+  - Direct AWS-hosted services (66.17.x.x ranges tied to `vn.cloud.tesla.com` infrastructure)
+
+### ASNs Identified
+9 Autonomous System Numbers, confirming multi-provider infrastructure:
+`AS13335` (Cloudflare), `AS15169` (Google), `AS16625` / `AS20940` (Akamai), plus additional dedicated ASNs — indicating a defense-in-depth CDN/WAF strategy in front of origin infrastructure.
+
+### Interesting URLs / Endpoint Exposure
+Several OAuth2 authorization endpoints were discovered, exposing internal application identifiers via `client_id` parameters, e.g.:
+- `client_id=ownership` (owner portal auth flow)
+- `client_id=tesla-portal-srm` (supplier relationship management portal)
+- `client_id=businessui` (fleet/business API auth flow)
+
+While these are expected public OAuth endpoints, the exposed `client_id` values give an outside observer insight into internal application naming and the scope of services tied to each (e.g. `vehicle_cmds`, `energy_cmds`, `fleet_api` scopes visible in query strings).
+
+## Risk Assessment
+- The scale of subdomain exposure (~95 hosts) is typical for an organization of this size, but several **staging/origin-prefixed subdomains** (e.g. `origin-inside.tesla.com`, `origin-finops.tesla.com`) being publicly resolvable increases attack surface — these are normally meant to sit behind the CDN, not be directly discoverable.
+- Exposed **OAuth `client_id` values** and their associated scopes offer reconnaissance value to an attacker building a picture of internal systems (fleet management, financial platforms, supplier portals) before attempting social engineering or targeted phishing against specific teams.
+- No leaked credentials or API keys were found via this passive method — infrastructure appears to rely on Cloudflare/Akamai as a strong first line of defense.
+
+## Recommendations
+1. Audit whether `origin-*` and staging subdomains need to remain publicly resolvable via DNS, or if they can be restricted to internal-only resolution.
+2. Periodically run external OSINT sweeps (as done here) to track organizational subdomain sprawl over time — infrastructure teams often lose visibility as cloud services scale.
+3. Review whether OAuth authorize endpoints need to expose descriptive `client_id` values externally, or whether more opaque identifiers would reduce reconnaissance value for attackers.
+4. Continue monitoring certificate transparency logs (crt.sh) for newly issued certificates on unexpected subdomains, which can indicate shadow IT or misconfigured services.
+
+## Deliverables
+- `osint_report.json` — raw theHarvester output
+- `report.md` — this report
+- `screenshots/` — terminal output and tool execution evidence
+
+## Disclaimer
+This assessment was conducted using entirely passive, open-source methods (certificate transparency logs, public DNS aggregators, and search-engine-indexed data). No direct scanning, connection attempts, or intrusive interaction with `tesla.com` infrastructure was performed at any point.
